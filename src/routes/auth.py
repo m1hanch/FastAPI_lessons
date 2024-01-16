@@ -9,7 +9,7 @@ from src.services.auth import auth_service
 from src.database.db import get_db
 
 from src.repository import users as repositories_users
-from src.schemas.user import UserSchema, TokenSchema, UserResponse
+from src.schemas.user import UserSchema, TokenSchema, UserResponse, RequestEmail
 
 router = APIRouter(prefix='/auth', tags=['auth'])
 get_refresh_token = HTTPBearer()
@@ -66,3 +66,14 @@ async def confirmed_email(token: str, db: AsyncSession = Depends(get_db)):
         return {"message": "Your email is already confirmed"}
     await repositories_users.confirmed_email(email, db)
     return {"message": "Email confirmed"}
+
+@router.post('/request_email')
+async def request_email(body: RequestEmail, background_tasks: BackgroundTasks, request: Request,
+                        db: AsyncSession = Depends(get_db)):
+    user = await repositories_users.get_user_by_email(body.email, db)
+
+    if user.confirmed:
+        return {"message": "Your email is already confirmed"}
+    if user:
+        background_tasks.add_task(email.send_email, user.email, user.username, str(request.base_url))
+    return {"message": "Check your email for confirmation."}

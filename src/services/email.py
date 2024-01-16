@@ -1,37 +1,49 @@
+import smtplib
 from pathlib import Path
 
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
-from fastapi_mail.errors import ConnectionErrors
-from pydantic import EmailStr
-
+from src.conf.config import config
 from src.services.auth import auth_service
+from email.message import EmailMessage
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-conf = ConnectionConfig(
-    MAIL_USERNAME="fastapi@meta.ua",
-    MAIL_PASSWORD="pythonCourse2023",
-    MAIL_FROM="fastapi@meta.ua",
-    MAIL_PORT=465,
-    MAIL_SERVER="smtp.meta.ua",
-    MAIL_FROM_NAME="TODO Systems",
-    MAIL_STARTTLS=False,
-    MAIL_SSL_TLS=True,
-    USE_CREDENTIALS=True,
-    VALIDATE_CERTS=True,
-    TEMPLATE_FOLDER=Path(__file__).parent / 'templates',
+MAIL_USERNAME = config.MAIL_USERNAME
+MAIL_PASSWORD = config.MAIL_PASSWORD
+MAIL_FROM = config.MAIL_FROM
+MAIL_PORT = config.MAIL_PORT
+MAIL_SERVER = config.MAIL_SERVER
+MAIL_FROM_NAME = "TODO Systems"
+TEMPLATE_FOLDER = Path(__file__).parent / 'templates'
+
+env = Environment(
+    loader=FileSystemLoader(TEMPLATE_FOLDER),
+    autoescape=select_autoescape(['html', 'xml'])
 )
 
 
-async def send_email(email: EmailStr, username: str, host: str):
-    try:
-        token_verification = auth_service.create_email_token({"sub": email})
-        message = MessageSchema(
-            subject="Confirm your email ",
-            recipients=[email],
-            template_body={"host": host, "username": username, "token": token_verification},
-            subtype=MessageType.html
-        )
+def render_template(template_name, **template_vars):
+    template = env.get_template(template_name)
+    return template.render(**template_vars)
 
-        fm = FastMail(conf)
-        await fm.send_message(message, template_name="verify_email.html")
-    except ConnectionErrors as err:
+
+async def send_email(email, username, host):
+    try:
+        # Create the email token
+        token_verification = auth_service.create_email_token({"sub": email})
+
+        # Create the message
+        message = EmailMessage()
+        message["From"] = MAIL_FROM
+        message["To"] = email
+        message["Subject"] = "Confirm your email"
+
+        # You might want to use a templating engine like Jinja2 to render HTML emails
+        html = render_template('verify_email.html', host=host, username=username, token=token_verification)
+        message.set_content(html, subtype='html')
+
+        # Connect to the server and send the email
+        with smtplib.SMTP_SSL(MAIL_SERVER, MAIL_PORT) as server:
+            server.login(MAIL_USERNAME, MAIL_PASSWORD)
+            server.send_message(message)
+
+    except Exception as err:
         print(err)
